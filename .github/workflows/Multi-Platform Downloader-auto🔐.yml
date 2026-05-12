@@ -100,13 +100,13 @@ jobs:
             "${{ github.event.inputs.url }}" \
             -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
 
-      # ================= تغییر ترتیب: ابتدا پاکسازی، سپس به‌روزرسانی رکوردها =================
-      - name: 🧹 پاکسازی فایل‌های صوتی کهنه (بیش از ۲۴ ساعت)
-        run: python cleanup_audio.py
+      # این بخش چون format همیشه audio است، ویدئویی وجود ندارد. فقط برای تطابق ساختار قبلی گذاشته شده.
+      - name: ✂️ تبدیل فایل‌های بزرگ به ZIP (غیرفعال)
+        if: false
+        run: echo "نیازی به تقسیم فایل صوتی نیست"
 
-      - name: 🕒 به‌روزرسانی رکورد زمان آپلود (حذف رکورد فایل‌های پاک شده)
+      - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
-      # ==============================================================================
 
       - name: 🚀 ثبت فایل‌ها در مخزن
         run: |
@@ -118,6 +118,9 @@ jobs:
           git add "${{ github.event.inputs.folder }}" upload_times.txt
           git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}" || echo "هیچ فایل جدیدی نیست"
           git push
+
+      - name: 🧹 پاکسازی فایل‌های صوتی کهنه (بیش از ۲۴ ساعت)
+        run: python cleanup_audio.py
 
       - name: 📌 ذخیره‌سازی حذف‌ها (در صورت وجود)
         run: |
