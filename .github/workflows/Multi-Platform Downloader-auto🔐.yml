@@ -108,8 +108,8 @@ jobs:
       - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
 
-      # ================= مرحله ثبت با تلاش مجدد =================
-      - name: 🚀 ثبت فایل‌ها در مخزن (با retry)
+      # ================= ثبت فایل‌ها با retry و حل خودکار کانفلیکت =================
+      - name: 🚀 ثبت فایل‌ها در مخزن (با retry و حل کانفلیکت)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -120,19 +120,35 @@ jobs:
           for ((i=1; i<=MAX_RETRIES; i++)); do
             echo "🔄 تلاش $i از $MAX_RETRIES برای commit و push..."
             
-            # دریافت آخرین تغییرات
+            # دریافت آخرین تغییرات از راه‌دور
             git fetch origin main
-            git rebase origin/main --autostash || echo "ریبیس خودکار انجام شد یا تغییری نبود"
             
-            # اضافه کردن فایل‌های جدید و فایل رکورد زمان
-            git add "${{ github.event.inputs.folder }}" upload_times.txt || true
+            # ذخیره موقت تغییرات محلی (در صورت وجود)
+            git stash push --include-untracked -m "auto-stash-$i" || true
             
-            # اگر هیچ تغییری وجود نداشت، خارج شو
+            # هماهنگ شدن با آخرین نسخه راه‌دور (حل کانفلیکت با reset --hard)
+            git reset --hard origin/main
+            
+            # اعمال مجدد تغییرات محلی که در stash هستند
+            git stash pop || true
+            
+            # اگر فایل upload_times_* دچار کانفلیکت شده، نسخه راه‌دور را بگیر
+            if git status --porcelain | grep -E '^UU.*upload_times_'; then
+              echo "⚠️ کانفلیکت در فایل رکورد زمان. استفاده از نسخه راه‌دور..."
+              git checkout --theirs upload_times_*.txt 2>/dev/null || true
+              git add upload_times_*.txt
+            fi
+            
+            # اضافه کردن فایل‌های پوشه دانلود و فایل‌های رکورد
+            git add "${{ github.event.inputs.folder }}" upload_times_*.txt || true
+            
+            # اگر تغییری وجود نداشت، خارج شو
             if git diff --staged --quiet; then
               echo "ℹ️ هیچ فایل جدیدی برای commit وجود ندارد."
               exit 0
             fi
             
+            # commit تغییرات
             git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}"
             
             # تلاش برای push
@@ -151,7 +167,7 @@ jobs:
       - name: 🧹 پاکسازی فایل‌های صوتی کهنه (بیش از ۲۴ ساعت)
         run: python cleanup_audio.py
 
-      # ================= مرحله پاکسازی با تلاش مجدد =================
+      # ================= مرحله پاکسازی با retry و حل کانفلیکت =================
       - name: 📌 ذخیره‌سازی حذف‌ها (در صورت وجود)
         run: |
           git config user.name "github-actions[bot]"
@@ -163,7 +179,15 @@ jobs:
           for ((i=1; i<=MAX_RETRIES; i++)); do
             echo "🔄 تلاش $i برای commit پاکسازی..."
             git fetch origin main
-            git rebase origin/main --autostash || true
+            git stash push --include-untracked -m "cleanup-stash-$i" || true
+            git reset --hard origin/main
+            git stash pop || true
+            
+            if git status --porcelain | grep -E '^UU.*upload_times_'; then
+              git checkout --theirs upload_times_*.txt 2>/dev/null || true
+              git add upload_times_*.txt
+            fi
+            
             git add -A
             if git diff --staged --quiet; then
               echo "ℹ️ هیچ تغییر جدیدی برای commit وجود ندارد."
@@ -178,7 +202,6 @@ jobs:
               sleep $RETRY_DELAY
             fi
           done
-          
           echo "❌ پس از تلاش مجدد، پوش پاکسازی ناموفق بود."
           exit 1
 
