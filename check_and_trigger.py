@@ -13,7 +13,7 @@ TITLE_STATE_FILE = "processed_titles.txt"  # عناوین دانلودشده (ج
 # اطلاعات مخزن دانلودر
 REPO_OWNER = "alipoorkaramali"
 REPO_NAME = "youtube-SoundCloud-downloader"
-WORKFLOW_FILE = "Multi-Platform Downloader-auto.yml"
+WORKFLOW_FILE = "Multi-Platform Downloader-auto🔐.yml"   # <---- تغییر این خط
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 
 # پوشهٔ مقصد برای دانلودهای خودکار (جدا از دانلودهای دستی)
@@ -67,9 +67,8 @@ def extract_info(line: str):
             return None
 
     url = parts[-1].strip()
-    # عنوان = بخش‌های میانی تا یکی‌مانده‌به‌آخر (relative_time حذف می‌شود)
-    # استفاده از parts[2:-2] برای رد کردن relative_time (ایندکس -2)
-    title_parts = parts[2:-2]
+    # عنوان = بخش‌های میانی تا یکی‌مانده‌به‌آخر (همان relative_time حذف می‌شود)
+    title_parts = parts[2:-1]
     title = " | ".join(title_parts).strip() if title_parts else None
 
     return (platform, title, url)
