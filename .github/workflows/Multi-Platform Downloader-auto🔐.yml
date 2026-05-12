@@ -108,31 +108,79 @@ jobs:
       - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
 
-      - name: 🚀 ثبت فایل‌ها در مخزن
+      # ================= مرحله ثبت با تلاش مجدد =================
+      - name: 🚀 ثبت فایل‌ها در مخزن (با retry)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash push --include-untracked
-          git pull --rebase origin main
-          git stash pop || true
-          git add "${{ github.event.inputs.folder }}" upload_times.txt
-          git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}" || echo "هیچ فایل جدیدی نیست"
-          git push
+          
+          MAX_RETRIES=5
+          RETRY_DELAY=10
+          
+          for ((i=1; i<=MAX_RETRIES; i++)); do
+            echo "🔄 تلاش $i از $MAX_RETRIES برای commit و push..."
+            
+            # دریافت آخرین تغییرات
+            git fetch origin main
+            git rebase origin/main --autostash || echo "ریبیس خودکار انجام شد یا تغییری نبود"
+            
+            # اضافه کردن فایل‌های جدید و فایل رکورد زمان
+            git add "${{ github.event.inputs.folder }}" upload_times.txt || true
+            
+            # اگر هیچ تغییری وجود نداشت، خارج شو
+            if git diff --staged --quiet; then
+              echo "ℹ️ هیچ فایل جدیدی برای commit وجود ندارد."
+              exit 0
+            fi
+            
+            git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}"
+            
+            # تلاش برای push
+            if git push origin main; then
+              echo "✅ پوش با موفقیت انجام شد."
+              exit 0
+            else
+              echo "⚠️ تداخل در push (احتمالاً چند workflow همزمان). ${RETRY_DELAY} ثانیه صبر می‌شود..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "❌ پس از $MAX_RETRIES تلاش، پوش ناموفق بود."
+          exit 1
 
       - name: 🧹 پاکسازی فایل‌های صوتی کهنه (بیش از ۲۴ ساعت)
         run: python cleanup_audio.py
 
+      # ================= مرحله پاکسازی با تلاش مجدد =================
       - name: 📌 ذخیره‌سازی حذف‌ها (در صورت وجود)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add -A
-          if git diff --staged --quiet; then
-            echo "هیچ تغییر جدیدی برای commit وجود ندارد."
-          else
+          
+          MAX_RETRIES=5
+          RETRY_DELAY=10
+          
+          for ((i=1; i<=MAX_RETRIES; i++)); do
+            echo "🔄 تلاش $i برای commit پاکسازی..."
+            git fetch origin main
+            git rebase origin/main --autostash || true
+            git add -A
+            if git diff --staged --quiet; then
+              echo "ℹ️ هیچ تغییر جدیدی برای commit وجود ندارد."
+              exit 0
+            fi
             git commit -m "پاکسازی فایل‌های صوتی قدیمی (>24h)"
-            git push
-          fi
+            if git push origin main; then
+              echo "✅ پوش پاکسازی موفق بود."
+              exit 0
+            else
+              echo "⚠️ تداخل در push پاکسازی. ${RETRY_DELAY} ثانیه صبر می‌شود..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "❌ پس از تلاش مجدد، پوش پاکسازی ناموفق بود."
+          exit 1
 
       - name: 📦 انتشار در Release (فایل‌های کوچک)
         env:
