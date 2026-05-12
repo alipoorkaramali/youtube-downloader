@@ -39,6 +39,22 @@ jobs:
       - name: 📥 دریافت فایل‌های مخزن
         uses: actions/checkout@v4
 
+      # ============= رمزگشایی فایل کوکی =============
+      - name: 🔐 رمزگشایی فایل cookies.txt.gpg
+        run: |
+          if [ ! -f "cookies.txt.gpg" ]; then
+            echo "❌ خطا: فایل cookies.txt.gpg در مخزن یافت نشد!"
+            exit 1
+          fi
+          gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
+          if [ -s cookies.txt ]; then
+            echo "✅ فایل cookies.txt با موفقیت رمزگشایی شد."
+          else
+            echo "❌ خطا: رمزگشایی ناموفق بود یا فایل کوکی خالی است."
+            exit 1
+          fi
+      # ==============================================
+
       # ============= نصب ابزارها =============
       - name: 🔧 نصب ffmpeg
         run: |
@@ -50,17 +66,6 @@ jobs:
         with:
           ejs-node: true
           aria2: true
-
-      # ============= اضافه کردن کوکی از secrets =============
-      - name: 🍪 ایجاد فایل cookies.txt از Secret
-        run: |
-          if [ -n "${{ secrets.COOKIE_CONTENT }}" ]; then
-            echo "${{ secrets.COOKIE_CONTENT }}" > cookies.txt
-            echo "✅ فایل cookies.txt از secret ساخته شد."
-          else
-            echo "⚠️ هشدار: هیچ کوکی در secret تنظیم نشده است. ممکن است برخی دانلودها با خطا مواجه شوند."
-            touch cookies.txt
-          fi
 
       - name: 🧹 پاکسازی پوشهٔ دانلود (فقط برای دانلودهای دستی)
         if: github.event.inputs.folder != 'audio_downloads'
