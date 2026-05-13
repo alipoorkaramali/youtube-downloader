@@ -55,17 +55,14 @@ jobs:
           fi
       # ==============================================
 
-      # ============= نصب ابزارها =============
-      - name: 🔧 نصب ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg zip
-
-      - name: ⚙️ نصب yt‑dlp با پشتیبانی از چالش‌های JavaScript
+      # ============= نصب و کش yt-dlp و ffmpeg =============
+      - name: ⚙️ نصب yt‑dlp و ffmpeg (با کش خودکار)
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
           aria2: true
+          install-ffmpeg: true
+      # ====================================================
 
       - name: 🧹 پاکسازی پوشهٔ دانلود (فقط برای دانلودهای دستی)
         if: github.event.inputs.folder != 'audio_downloads'
@@ -154,19 +151,51 @@ jobs:
       - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
 
-      # ================= ذخیره در مخزن =================
-      - name: 🚀 ثبت فایل‌ها در مخزن
+      # ================= ثبت فایل‌ها در مخزن با retry و حل کانفلیکت =================
+      - name: 🚀 ثبت فایل‌ها در مخزن (با retry و حل کانفلیکت)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git stash push --include-untracked
-          git pull --rebase origin main
-          git stash pop || true
-          git add "${{ github.event.inputs.folder }}" upload_times.txt
-          git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}" || echo "هیچ فایل جدیدی نیست"
-          git push
+          
+          MAX_RETRIES=5
+          RETRY_DELAY=10
+          
+          for ((i=1; i<=MAX_RETRIES; i++)); do
+            echo "🔄 تلاش $i از $MAX_RETRIES برای commit و push..."
+            
+            git fetch origin main
+            git stash push --include-untracked -m "costume-stash-$i" || true
+            git reset --hard origin/main
+            git stash pop || true
+            
+            if git status --porcelain | grep -E '^UU.*upload_times_'; then
+              echo "⚠️ کانفلیکت در فایل رکورد زمان. استفاده از نسخه راه‌دور..."
+              git checkout --theirs upload_times_*.txt 2>/dev/null || true
+              git add upload_times_*.txt
+            fi
+            
+            git add "${{ github.event.inputs.folder }}" upload_times_*.txt || true
+            
+            if git diff --staged --quiet; then
+              echo "ℹ️ هیچ فایل جدیدی برای commit وجود ندارد."
+              exit 0
+            fi
+            
+            git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}"
+            
+            if git push origin main; then
+              echo "✅ پوش با موفقیت انجام شد."
+              exit 0
+            else
+              echo "⚠️ تداخل در push. ${RETRY_DELAY} ثانیه صبر می‌شود..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          
+          echo "❌ پس از $MAX_RETRIES تلاش، پوش ناموفق بود."
+          exit 1
 
-      # ================= انتشار در Release =================
+      # ================= انتشار در Release (اختیاری) =================
       - name: 📦 انتشار در Release (فایل‌های کوچک)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
