@@ -54,16 +54,14 @@ jobs:
           fi
       # ==============================================
 
-      - name: 🔧 نصب ffmpeg
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg zip
-
-      - name: ⚙️ نصب yt‑dlp با پشتیبانی از چالش‌های JavaScript
+      # ============= نصب و کش yt-dlp و ffmpeg =============
+      - name: ⚙️ نصب yt‑dlp و ffmpeg (با کش خودکار)
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
           aria2: true
+          ffmpeg: true          # درست شد
+      # ====================================================
 
       - name: 🧹 پاکسازی پوشهٔ دانلود (فقط برای دانلودهای دستی)
         if: github.event.inputs.folder != 'audio_downloads'
@@ -108,7 +106,7 @@ jobs:
       - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
 
-      # ================= ثبت فایل‌ها با retry و حل خودکار کانفلیکت =================
+      # ================= ثبت فایل‌ها در مخزن با retry و حل کانفلیکت =================
       - name: 🚀 ثبت فایل‌ها در مخزن (با retry و حل کانفلیکت)
         run: |
           git config user.name "github-actions[bot]"
@@ -120,43 +118,31 @@ jobs:
           for ((i=1; i<=MAX_RETRIES; i++)); do
             echo "🔄 تلاش $i از $MAX_RETRIES برای commit و push..."
             
-            # دریافت آخرین تغییرات از راه‌دور
             git fetch origin main
-            
-            # ذخیره موقت تغییرات محلی (در صورت وجود)
             git stash push --include-untracked -m "auto-stash-$i" || true
-            
-            # هماهنگ شدن با آخرین نسخه راه‌دور (حل کانفلیکت با reset --hard)
             git reset --hard origin/main
-            
-            # اعمال مجدد تغییرات محلی که در stash هستند
             git stash pop || true
             
-            # اگر فایل upload_times_* دچار کانفلیکت شده، نسخه راه‌دور را بگیر
             if git status --porcelain | grep -E '^UU.*upload_times_'; then
               echo "⚠️ کانفلیکت در فایل رکورد زمان. استفاده از نسخه راه‌دور..."
               git checkout --theirs upload_times_*.txt 2>/dev/null || true
               git add upload_times_*.txt
             fi
             
-            # اضافه کردن فایل‌های پوشه دانلود و فایل‌های رکورد
             git add "${{ github.event.inputs.folder }}" upload_times_*.txt || true
             
-            # اگر تغییری وجود نداشت، خارج شو
             if git diff --staged --quiet; then
               echo "ℹ️ هیچ فایل جدیدی برای commit وجود ندارد."
               exit 0
             fi
             
-            # commit تغییرات
             git commit -m "افزودن فایل از ${{ github.event.inputs.platform }}"
             
-            # تلاش برای push
             if git push origin main; then
               echo "✅ پوش با موفقیت انجام شد."
               exit 0
             else
-              echo "⚠️ تداخل در push (احتمالاً چند workflow همزمان). ${RETRY_DELAY} ثانیه صبر می‌شود..."
+              echo "⚠️ تداخل در push. ${RETRY_DELAY} ثانیه صبر می‌شود..."
               sleep $RETRY_DELAY
             fi
           done
