@@ -1,4 +1,4 @@
-name: 🎬🎵🔐👋 NEW2-costume-Multi-Platform Downloader (YouTube + SoundCloud + Split to ZIP)
+name: 🎬🎵⚙️🔐 NEW2-auto-Multi-Platform Downloader (YouTube + SoundCloud + Split to ZIP)
 
 on:
   workflow_dispatch:
@@ -15,12 +15,11 @@ on:
         description: '🔗 لینک ویدئو / آهنگ'
         required: true
       format:
-        description: '🎬 خروجی'
+        description: '🎬 خروجی (فقط صوت)'
         required: true
-        default: 'video'
+        default: 'audio'
         type: choice
         options:
-          - 'video'
           - 'audio'
       folder:
         description: '📁 پوشهٔ ذخیره'
@@ -61,31 +60,15 @@ jobs:
         with:
           ejs-node: true
           aria2: true
-          install-ffmpeg: true
+          ffmpeg: true          # درست شد
       # ====================================================
 
       - name: 🧹 پاکسازی پوشهٔ دانلود (فقط برای دانلودهای دستی)
         if: github.event.inputs.folder != 'audio_downloads'
         run: rm -rf "${{ github.event.inputs.folder }}"/*
 
-      # ================= YouTube =================
-      - name: ▶️ یوتیوب | دانلود ویدئو (MP4)
-        if: github.event.inputs.platform == 'youtube' && github.event.inputs.format == 'video'
-        run: |
-          mkdir -p "${{ github.event.inputs.folder }}"
-          yt-dlp -f "bestvideo[height<=1080]+bestaudio/best[height<=1080]" \
-            --merge-output-format mp4 \
-            --cookies cookies.txt \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
-            --sleep-interval 5 \
-            --max-sleep-interval 15 \
-            --sleep-requests 2 \
-            --force-overwrites \
-            "${{ github.event.inputs.url }}" \
-            -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
-
       - name: ▶️ یوتیوب | دانلود صوت (MP3)
-        if: github.event.inputs.platform == 'youtube' && github.event.inputs.format == 'audio'
+        if: github.event.inputs.platform == 'youtube'
         run: |
           mkdir -p "${{ github.event.inputs.folder }}"
           yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" \
@@ -101,9 +84,8 @@ jobs:
             "${{ github.event.inputs.url }}" \
             -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
 
-      # ================= SoundCloud =================
       - name: ☁️ ساندکلاد | دانلود صوت (MP3)
-        if: github.event.inputs.platform == 'soundcloud' && github.event.inputs.format == 'audio'
+        if: github.event.inputs.platform == 'soundcloud'
         run: |
           mkdir -p "${{ github.event.inputs.folder }}"
           yt-dlp -x --audio-format mp3 --audio-quality 0 \
@@ -116,38 +98,11 @@ jobs:
             "${{ github.event.inputs.url }}" \
             -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
 
-      - name: ☁️ ساندکلاد | دانلود ویدئو (در صورت وجود)
-        if: github.event.inputs.platform == 'soundcloud' && github.event.inputs.format == 'video'
-        run: |
-          mkdir -p "${{ github.event.inputs.folder }}"
-          yt-dlp -f bestvideo+bestaudio/best --merge-output-format mp4 \
-            --no-playlist \
-            --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
-            --sleep-interval 5 \
-            --max-sleep-interval 15 \
-            --sleep-requests 2 \
-            "${{ github.event.inputs.url }}" \
-            -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
+      # این بخش چون format همیشه audio است، ویدئویی وجود ندارد. فقط برای تطابق ساختار قبلی گذاشته شده.
+      - name: ✂️ تبدیل فایل‌های بزرگ به ZIP (غیرفعال)
+        if: false
+        run: echo "نیازی به تقسیم فایل صوتی نیست"
 
-      # ================= بسته‌بندی ویدئوهای بزرگ =================
-      - name: ✂️ تبدیل ویدئوهای بزرگ به ZIP چندبخشی
-        if: github.event.inputs.format == 'video'
-        run: |
-          FOLDER="${{ github.event.inputs.folder }}"
-          for video in "$FOLDER"/*.mp4; do
-            [ -e "$video" ] || continue
-            SIZE=$(stat -c%s "$video")
-            if [ "$SIZE" -gt 94371840 ]; then
-              BASENAME=$(basename "$video" .mp4)
-              ZIPNAME="$FOLDER/${BASENAME}.zip"
-              echo "بسته‌بندی $video ($(numfmt --to=iec $SIZE)) در $ZIPNAME ..."
-              zip -s 90m -j "$ZIPNAME" "$video"
-              rm "$video"
-              echo "✅ فایل به قطعات ZIP تقسیم شد." > "$FOLDER/${BASENAME}_README.txt"
-            fi
-          done
-
-      # ================= ثبت زمان آپلود =================
       - name: 🕒 ثبت زمان آپلود فایل‌های جدید
         run: python record_upload_time.py "${{ github.event.inputs.folder }}"
 
@@ -164,7 +119,7 @@ jobs:
             echo "🔄 تلاش $i از $MAX_RETRIES برای commit و push..."
             
             git fetch origin main
-            git stash push --include-untracked -m "costume-stash-$i" || true
+            git stash push --include-untracked -m "auto-stash-$i" || true
             git reset --hard origin/main
             git stash pop || true
             
@@ -195,14 +150,54 @@ jobs:
           echo "❌ پس از $MAX_RETRIES تلاش، پوش ناموفق بود."
           exit 1
 
-      # ================= انتشار در Release (اختیاری) =================
+      - name: 🧹 پاکسازی فایل‌های صوتی کهنه (بیش از ۲۴ ساعت)
+        run: python cleanup_audio.py
+
+      # ================= مرحله پاکسازی با retry و حل کانفلیکت =================
+      - name: 📌 ذخیره‌سازی حذف‌ها (در صورت وجود)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          MAX_RETRIES=5
+          RETRY_DELAY=10
+          
+          for ((i=1; i<=MAX_RETRIES; i++)); do
+            echo "🔄 تلاش $i برای commit پاکسازی..."
+            git fetch origin main
+            git stash push --include-untracked -m "cleanup-stash-$i" || true
+            git reset --hard origin/main
+            git stash pop || true
+            
+            if git status --porcelain | grep -E '^UU.*upload_times_'; then
+              git checkout --theirs upload_times_*.txt 2>/dev/null || true
+              git add upload_times_*.txt
+            fi
+            
+            git add -A
+            if git diff --staged --quiet; then
+              echo "ℹ️ هیچ تغییر جدیدی برای commit وجود ندارد."
+              exit 0
+            fi
+            git commit -m "پاکسازی فایل‌های صوتی قدیمی (>24h)"
+            if git push origin main; then
+              echo "✅ پوش پاکسازی موفق بود."
+              exit 0
+            else
+              echo "⚠️ تداخل در push پاکسازی. ${RETRY_DELAY} ثانیه صبر می‌شود..."
+              sleep $RETRY_DELAY
+            fi
+          done
+          echo "❌ پس از تلاش مجدد، پوش پاکسازی ناموفق بود."
+          exit 1
+
       - name: 📦 انتشار در Release (فایل‌های کوچک)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FILE=$(find "${{ github.event.inputs.folder }}" -maxdepth 1 -type f \( -name "*.mp3" -o -name "*.mp4" \) 2>/dev/null | head -1)
           if [ -z "$FILE" ]; then
-            echo "فایل یکپارچه‌ای یافت نشد."
+            echo "فایل یکپارچه‌ای یافت نشد؛ از انتشار صرف‌نظر می‌شود."
             exit 0
           fi
           echo "آپلود فایل یکپارچه: $FILE"
