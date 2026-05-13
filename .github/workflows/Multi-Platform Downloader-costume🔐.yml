@@ -149,11 +149,6 @@ jobs:
               echo "✅ فایل به قطعات ZIP تقسیم شد." > "$FOLDER/${BASENAME}_README.txt"
             fi
           done
-
-      # ================= ثبت زمان آپلود =================
-      - name: 🕒 ثبت زمان آپلود فایل‌های جدید
-        run: python record_upload_time.py "${{ github.event.inputs.folder }}"
-
       # ================= ذخیره در مخزن =================
       - name: 🚀 ثبت فایل‌ها در مخزن
         run: |
