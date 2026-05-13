@@ -1,0 +1,73 @@
+name: 🔌 بررسی اتصال به Files.ir API
+
+on:
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: 'آدرس پایه API (پیش‌فرض: https://api.files.ir)'
+        required: false
+        default: 'https://api.files.ir'
+      user_space:
+        description: 'دریافت اطلاعات فضای ذخیره‌سازی (true/false)'
+        required: false
+        default: 'true'
+
+jobs:
+  test-connection:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🧪 تست اتصال و توکن
+        env:
+          FILESIR_TOKEN: ${{ secrets.FILESIR_TOKEN }}
+          API_BASE: ${{ github.event.inputs.api_base_url }}
+        run: |
+          if [ -z "$FILESIR_TOKEN" ]; then
+            echo "❌ خطا: توکن FILESIR_TOKEN در Secrets تعریف نشده است."
+            exit 1
+          fi
+          echo "🔐 توکن وجود دارد (طول: ${#FILESIR_TOKEN})"
+          
+          echo "📡 ارسال درخواست به $API_BASE/user/space-usage ..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET "$API_BASE/user/space-usage" \
+            -H "Authorization: Bearer $FILESIR_TOKEN" \
+            -H "Content-Type: application/json")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status Code: $HTTP_CODE"
+          echo "Response Body:"
+          echo "$BODY" | jq . 2>/dev/null || echo "$BODY"
+          
+          if [ "$HTTP_CODE" -eq 200 ]; then
+            echo "✅ اتصال موفقیت‌آمیز است. توکن معتبر می‌باشد."
+            if [ "${{ github.event.inputs.user_space }}" == "true" ]; then
+              USED=$(echo "$BODY" | jq -r '.used // "نامشخص"')
+              AVAILABLE=$(echo "$BODY" | jq -r '.available // "نامحدود"')
+              REMAINING=$(echo "$BODY" | jq -r '.remaining // "نامحدود"')
+              echo "💾 فضای استفاده شده: $USED بایت"
+              echo "💿 فضای کل: $AVAILABLE بایت"
+              echo "📀 فضای باقیمانده: $REMAINING بایت"
+            fi
+            exit 0
+          else
+            echo "❌ اتصال ناموفق. کد وضعیت: $HTTP_CODE"
+            echo "لطفاً توکن را بررسی کنید یا آدرس API را تغییر دهید (پیش‌فرض: https://api.files.ir)"
+            exit 1
+          fi
+
+      - name: 🌐 (اختیاری) تست endpoint دیگر - لیست فایل‌ها
+        if: success()
+        env:
+          FILESIR_TOKEN: ${{ secrets.FILESIR_TOKEN }}
+          API_BASE: ${{ github.event.inputs.api_base_url }}
+        run: |
+          echo "📂 دریافت لیست فایل‌ها (محدود به 5 مورد)..."
+          RESPONSE=$(curl -s -X GET "$API_BASE/drive/file-entries?perPage=5" \
+            -H "Authorization: Bearer $FILESIR_TOKEN")
+          COUNT=$(echo "$RESPONSE" | jq '. | length')
+          echo "✅ تعداد فایل‌های برگشتی: $COUNT"
+          if [ "$COUNT" -gt 0 ]; then
+            echo "نمونه‌ای از اولین فایل:"
+            echo "$RESPONSE" | jq '.[0] | {id, name, type}'
+          fi
