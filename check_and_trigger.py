@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 import hashlib
 from pathlib import Path
@@ -13,10 +14,10 @@ TITLE_STATE_FILE = "processed_titles.txt"  # عناوین دانلودشده (ج
 # اطلاعات مخزن دانلودر
 REPO_OWNER = "alipoorkaramali"
 REPO_NAME = "youtube-SoundCloud-downloader"
-WORKFLOW_FILE = "Multi-Platform Downloader-auto🔐.yml"   # <---- تغییر این خط
+WORKFLOW_FILE = "Multi-Platform Downloader-auto🔐.yml"
 GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
 
-# پوشهٔ مقصد برای دانلودهای خودکار (جدا از دانلودهای دستی)
+# پوشهٔ مقصد برای دانلودهای خودکار
 AUTO_FOLDER = "audio_downloads"
 
 
@@ -48,7 +49,7 @@ def add_processed_title(title):
 def extract_info(line: str):
     """
     ساختار خط لاگ:
-    timestamp | platform | عنوان (ممکن است شامل | باشد) | relative_time | url
+    timestamp | platform | عنوان | relative_time | url
     خروجی: (platform, title, url) یا None
     """
     parts = line.split(" | ")
@@ -67,11 +68,30 @@ def extract_info(line: str):
             return None
 
     url = parts[-1].strip()
-    # عنوان = بخش‌های میانی تا یکی‌مانده‌به‌آخر (همان relative_time حذف می‌شود)
+    # عنوان = بخش‌های میانی تا یکی‌مانده‌به‌آخر (relative_time حذف می‌شود)
     title_parts = parts[2:-1]
     title = " | ".join(title_parts).strip() if title_parts else None
 
     return (platform, title, url)
+
+
+def normalize_title(title: str) -> str:
+    """
+    نرمالایز کردن عنوان برای مقایسه بهتر بین یوتیوب و ساندکلاد:
+    - حذف کلمات اضافی مانند (Audio), (Official Video), [lyrics] و ...
+    - حذف کاراکترهای تکراری و فاصله‌های اضافی
+    - تبدیل به حروف کوچک
+    """
+    if not title:
+        return ""
+    # حذف محتوای داخل پرانتز و کروشه
+    title = re.sub(r'\s*[\(\[].*?[\)\]]\s*', ' ', title)
+    # حذف عبارات رایج
+    title = re.sub(r'(?i)\b(audio|official|video|music|clip|lyrics|hd|4k|mp3|download)\b', '', title)
+    # تبدیل چند فاصله به یک فاصله
+    title = re.sub(r'\s+', ' ', title)
+    # حذف فاصله از ابتدا و انتها و تبدیل به lowercase
+    return title.strip().lower()
 
 
 def trigger_download(video_url: str):
@@ -90,7 +110,7 @@ def trigger_download(video_url: str):
             "platform": "youtube" if "youtube.com" in video_url else "soundcloud",
             "url": video_url,
             "format": "audio",
-            "folder": AUTO_FOLDER          # 👈 دانلودهای خودکار در audio_downloads
+            "folder": AUTO_FOLDER
         }
     }
     resp = requests.post(url, headers=headers, json=payload)
@@ -112,6 +132,9 @@ def main():
     processed_hashes = load_processed_hashes()
     processed_titles = load_processed_titles()
 
+    # دیکشنری موقت برای عناوین نرمالایز شده در همین اجرا (جلوگیری از دانلود همزمان دو پلتفرم)
+    seen_normalized_titles = set()
+
     new_count = 0
 
     for line in lines:
@@ -122,15 +145,24 @@ def main():
 
         platform, title, video_url = info
 
-        # ۱. بررسی تکراری بودن لینک (با MD5)
+        # بررسی تکراری بودن لینک
         link_hash = hashlib.md5(video_url.encode()).hexdigest()
         if link_hash in processed_hashes:
             continue
 
-        # ۲. بررسی تکراری بودن عنوان (جلوگیری از دانلود یک خبر از دو پلتفرم مختلف)
+        # نرمالایز کردن عنوان (اگر عنوان داشته باشیم)
+        norm_title = normalize_title(title) if title else None
+
+        # بررسی تکراری بودن عنوان در فایل (اجراهای قبلی)
         if title and title in processed_titles:
-            print(f"⏭️ عنوان تکراری از منبع دیگر («{title}») - دانلود نمی‌شود.")
-            processed_hashes.add(link_hash)   # لینک را هم علامت بزنیم که دوباره بررسی نشود
+            print(f"⏭️ عنوان تکراری از منبع دیگر (فایل): {title}")
+            processed_hashes.add(link_hash)
+            continue
+
+        # بررسی تکراری بودن عنوان نرمالایز شده در همین اجرا (یوتیوب و ساندکلاد همزمان)
+        if norm_title and norm_title in seen_normalized_titles:
+            print(f"⏭️ عنوان نرمالایز شده تکراری در همین اجرا: '{title}' -> '{norm_title}' - دانلود نمی‌شود.")
+            processed_hashes.add(link_hash)
             continue
 
         print(f"🎧 پردازش {video_url} (platform={platform}, title={title})")
@@ -140,11 +172,12 @@ def main():
             processed_hashes.add(link_hash)
             if title:
                 processed_titles.add(title)
-                add_processed_title(title)   # بلافاصله در فایل processed_titles.txt ذخیره می‌شود
+                add_processed_title(title)
+            if norm_title:
+                seen_normalized_titles.add(norm_title)
             new_count += 1
-        # اگر dispatch ناموفق بود، لینک را ذخیره نمی‌کنیم تا دفعهٔ بعد دوباره تلاش شود
+        # اگر dispatch ناموفق بود، لینک را ذخیره نمی‌کنیم تا دفعهٔ بعد تلاش شود
 
-    # ذخیرهٔ وضعیت نهایی هش‌ها (processed.txt)
     save_processed_hashes(processed_hashes)
 
     if new_count:
