@@ -1,0 +1,61 @@
+name: 📋 Get YouTube Format List
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'YouTube URL'
+        required: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      # ============= Decrypt cookies =============
+      - name: 🔐 Decrypt cookies.txt.gpg
+        run: |
+          if [ ! -f "cookies.txt.gpg" ]; then
+            echo "⚠️ cookies.txt.gpg not found. Proceeding without cookies."
+          else
+            gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
+            if [ -s cookies.txt ]; then
+              echo "✅ cookies.txt decrypted."
+            else
+              echo "⚠️ Decryption failed. Proceeding without cookies."
+            fi
+          fi
+
+      - name: Install yt-dlp
+        run: pip install yt-dlp
+
+      - name: Generate format list
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          FILENAME="format_list_${TIMESTAMP}.txt"
+          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          
+          # Try with cookies if available, else without
+          if [ -f "cookies.txt" ]; then
+            yt-dlp -F "${{ github.event.inputs.url }}" \
+              --cookies cookies.txt \
+              --user-agent "$USER_AGENT" \
+              > "$FILENAME"
+          else
+            yt-dlp -F "${{ github.event.inputs.url }}" \
+              --user-agent "$USER_AGENT" \
+              > "$FILENAME"
+          fi
+          
+          echo "FILENAME=$FILENAME" >> $GITHUB_ENV
+
+      - name: Commit and push format list
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$FILENAME"
+          git commit -m "Add format list: $FILENAME [skip ci]"
+          git push
