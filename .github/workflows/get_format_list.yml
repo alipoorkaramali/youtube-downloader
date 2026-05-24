@@ -1,0 +1,53 @@
+name: 📋 Get YouTube Format List
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'YouTube URL'
+        required: true
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Decrypt cookies
+        run: |
+          if [ -f "cookies.txt.gpg" ]; then
+            gpg --quiet --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
+          fi
+
+      - name: Install yt-dlp
+        run: pip install yt-dlp
+
+      - name: Generate format list
+        id: generate
+        run: |
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          FILENAME="format_list_${TIMESTAMP}.txt"
+          USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+          
+          if [ -f "cookies.txt" ]; then
+            yt-dlp -F "${{ github.event.inputs.url }}" \
+              --cookies cookies.txt \
+              --user-agent "$USER_AGENT" \
+              --add-header "Accept-Language: en-US,en;q=0.9" \
+              --sleep-interval 2 \
+              > "$FILENAME"
+          else
+            yt-dlp -F "${{ github.event.inputs.url }}" \
+              --user-agent "$USER_AGENT" \
+              --add-header "Accept-Language: en-US,en;q=0.9" \
+              > "$FILENAME"
+          fi
+          
+          echo "FILENAME=$FILENAME" >> $GITHUB_ENV
+          echo "::set-output name=filename::$FILENAME"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: format-list
+          path: ${{ env.FILENAME }}
