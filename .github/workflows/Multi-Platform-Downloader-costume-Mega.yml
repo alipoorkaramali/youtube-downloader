@@ -27,7 +27,7 @@ on:
         required: false
         default: 'best'
       folder:
-        description: '📁 نام پوشه موقت برای دانلود'
+        description: '📁 نام پوشه موقت'
         required: false
         default: 'downloads'
       mega_folder:
@@ -47,7 +47,7 @@ jobs:
           if [ -f cookies.txt.gpg ]; then
             gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
           else
-            echo "⚠️ فایل cookies.txt.gpg یافت نشد، ادامه بدون کوکی"
+            echo "⚠️ فایل cookies.txt.gpg یافت نشد"
             touch cookies.txt
           fi
 
@@ -57,32 +57,29 @@ jobs:
           aria2: true
           ffmpeg: true
 
-      - name: 📦 Install rclone
-        run: sudo apt-get update && sudo apt-get install -y rclone
-
-      - name: 🔓 Decrypt & Configure rclone & Upload
+      - name: 📦 Install latest rclone from official site
         run: |
-          # ایجاد پوشه تنظیمات
+          curl https://rclone.org/install.sh | sudo bash
+          rclone version
+
+      - name: 🔓 Decrypt & Upload
+        run: |
+          # رمزگشایی فایل rclone.conf
           mkdir -p ~/.config/rclone
-          
-          # بررسی وجود فایل رمزگذاری شده rclone
           if [ ! -f rclone_mega.conf.gpg ]; then
-            echo "❌ فایل rclone_mega.conf.gpg در ریشه مخزن پیدا نشد!"
+            echo "❌ فایل rclone_mega.conf.gpg یافت نشد"
             exit 1
           fi
-          
-          # رمزگشایی فایل تنظیمات rclone
           gpg --quiet --batch --yes --decrypt --passphrase="${{ secrets.RCLONE_PASSPHRASE }}" --output ~/.config/rclone/rclone.conf rclone_mega.conf.gpg
           chmod 600 ~/.config/rclone/rclone.conf
           
-          # تأیید موفقیت
-          echo "✅ rclone config loaded. Remotes:"
-          rclone listremotes
+          # تست مجدد با rclone تازه نصب شده
+          echo "✅ Testing rclone with config:"
+          rclone --config ~/.config/rclone/rclone.conf listremotes
           
-          # آماده‌سازی پوشه دانلود
+          # دانلود فایل
           mkdir -p "${{ github.event.inputs.folder }}"
           
-          # دانلود بر اساس پلتفرم و نوع
           if [ "${{ github.event.inputs.platform }}" = "youtube" ]; then
             if [ "${{ github.event.inputs.type }}" = "video" ]; then
               QUALITY="${{ github.event.inputs.quality }}"
@@ -91,38 +88,18 @@ jobs:
               else
                 FORMAT="bestvideo[height<=$QUALITY]+bestaudio/best"
               fi
-              echo "🎬 دانلود ویدیو با فرمت: $FORMAT"
-              yt-dlp -f "$FORMAT" \
-                --merge-output-format mp4 \
-                --cookies cookies.txt \
-                "${{ github.event.inputs.url }}" \
-                -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
+              yt-dlp -f "$FORMAT" --merge-output-format mp4 --cookies cookies.txt "${{ github.event.inputs.url }}" -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
             else
-              echo "🎵 دانلود صوتی با کیفیت بالا"
-              yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" \
-                --audio-format mp3 \
-                --cookies cookies.txt \
-                "${{ github.event.inputs.url }}" \
-                -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
+              yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --cookies cookies.txt "${{ github.event.inputs.url }}" -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
             fi
           else
-            echo "🎧 دانلود از ساوندکلاود به صورت mp3"
-            yt-dlp -x --audio-format mp3 \
-              --cookies cookies.txt \
-              "${{ github.event.inputs.url }}" \
-              -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
+            yt-dlp -x --audio-format mp3 --cookies cookies.txt "${{ github.event.inputs.url }}" -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
           fi
           
-          # آپلود به Mega.nz با مشخص کردن مستقیم فایل config (حل مشکل backend not found)
+          # آپلود به مگا
           CONFIG_FILE="$HOME/.config/rclone/rclone.conf"
-          echo "📤 آپلود به ریموت: mega"
-          echo "📂 پوشه مقصد در مگا: ${{ github.event.inputs.mega_folder }}"
-          echo "استفاده از فایل کانفیگ: $CONFIG_FILE"
-          
+          echo "📤 Uploading to mega:${{ github.event.inputs.mega_folder }}"
           rclone --config "$CONFIG_FILE" mkdir "mega:${{ github.event.inputs.mega_folder }}" 2>/dev/null || true
-          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "mega:${{ github.event.inputs.mega_folder }}" \
-            --progress \
-            --transfers=4 \
-            --verbose
+          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "mega:${{ github.event.inputs.mega_folder }}" --progress --transfers=4 --verbose
           
-          echo "✅ آپلود به Mega.nz با موفقیت انجام شد!"
+          echo "✅ فرآیند با موفقیت پایان یافت"
