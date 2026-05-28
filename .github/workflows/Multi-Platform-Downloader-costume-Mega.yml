@@ -70,14 +70,11 @@ jobs:
       - name: 🔧 Setup rclone with debug
         run: |
           mkdir -p ~/.config/rclone
-          # دیکد کردن base64 ذخیره شده در secret
           echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > ~/.config/rclone/rclone.conf.tmp
           
-          # نمایش محتویات فایل بدون رمز و توکن
           echo "=== محتوای دیکد شده (پس از base64 -d) ==="
           cat ~/.config/rclone/rclone.conf.tmp | sed 's/pass =.*/pass = ***/' | sed 's/token =.*/token = ***/'
           
-          # کپی به فایل اصلی
           cp ~/.config/rclone/rclone.conf.tmp ~/.config/rclone/rclone.conf
           chmod 600 ~/.config/rclone/rclone.conf
           
@@ -134,10 +131,7 @@ jobs:
           echo "📤 آپلود به ریموت: $REMOTE"
           echo "📂 مسیر مقصد: $MEGA_PATH"
           
-          # ایجاد پوشه در مگا (در صورت نیاز)
           rclone mkdir "$MEGA_PATH" 2>/dev/null || true
-          
-          # آپلود فایل‌ها
           rclone copy "${{ github.event.inputs.folder }}" "$MEGA_PATH" \
             --progress \
             --transfers=4 \
