@@ -67,28 +67,47 @@ jobs:
       - name: 📦 Install rclone
         run: sudo apt-get update && sudo apt-get install -y rclone
 
-      - name: 🔧 Setup rclone with debug
+      - name: 🔧 Debug - Write all info to debug.txt
         run: |
-          mkdir -p ~/.config/rclone
-          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > ~/.config/rclone/rclone.conf.tmp
+          echo "=== شروع دیباگ ===" > debug.txt
+          echo "Date: $(date)" >> debug.txt
+          echo "" >> debug.txt
           
-          echo "=== محتوای دیکد شده (پس از base64 -d) ==="
-          cat ~/.config/rclone/rclone.conf.tmp | sed 's/pass =.*/pass = ***/' | sed 's/token =.*/token = ***/'
+          mkdir -p ~/.config/rclone
+          echo "${{ secrets.RCLONE_CONFIG_BASE64 }}" | base64 -d > ~/.config/rclone/rclone.conf.tmp 2>&1
+          
+          echo "=== محتوای دیکد شده (بدون رمز) ===" >> debug.txt
+          cat ~/.config/rclone/rclone.conf.tmp | sed 's/pass =.*/pass = ***/' | sed 's/token =.*/token = ***/' >> debug.txt
           
           cp ~/.config/rclone/rclone.conf.tmp ~/.config/rclone/rclone.conf
           chmod 600 ~/.config/rclone/rclone.conf
           
-          echo "=== لیست فایل‌های پوشه rclone ==="
-          ls -la ~/.config/rclone/
+          echo "" >> debug.txt
+          echo "=== لیست فایل‌های پوشه rclone ===" >> debug.txt
+          ls -la ~/.config/rclone/ >> debug.txt 2>&1
           
-          echo "=== تست rclone listremotes ==="
-          rclone listremotes || echo "ERROR: rclone listremotes failed"
+          echo "" >> debug.txt
+          echo "=== تست rclone listremotes ===" >> debug.txt
+          rclone listremotes >> debug.txt 2>&1 || echo "ERROR: rclone listremotes failed" >> debug.txt
           
-          echo "=== نمایش بخش‌های موجود در فایل (با grep) ==="
-          grep -E '^\[.*\]$' ~/.config/rclone/rclone.conf || echo "هیچ بخش [name] یافت نشد"
+          echo "" >> debug.txt
+          echo "=== بخش‌های موجود در فایل (با grep) ===" >> debug.txt
+          grep -E '^\[.*\]$' ~/.config/rclone/rclone.conf >> debug.txt 2>&1 || echo "هیچ بخش [name] یافت نشد" >> debug.txt
           
-          echo "=== نمایش 5 خط اول فایل (بدون رمز) ==="
-          head -n 5 ~/.config/rclone/rclone.conf | sed 's/pass =.*/pass = ***/' | sed 's/token =.*/token = ***/'
+          echo "" >> debug.txt
+          echo "=== 5 خط اول فایل ===" >> debug.txt
+          head -n 5 ~/.config/rclone/rclone.conf | sed 's/pass =.*/pass = ***/' | sed 's/token =.*/token = ***/' >> debug.txt
+          
+          echo "" >> debug.txt
+          echo "=== پایان دیباگ ===" >> debug.txt
+          
+          cat debug.txt  # همچنین در لاگ چاپ می‌کند
+          
+      - name: 📤 Upload debug.txt as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-output
+          path: debug.txt
 
       - name: ▶️ دانلود فایل
         run: |
@@ -124,7 +143,7 @@ jobs:
               -o "${{ github.event.inputs.folder }}/%(title)s.%(ext)s"
           fi
 
-      - name: ☁️ آپلود به Mega.nz (با ریموت انتخابی)
+      - name: ☁️ آپلود به Mega.nz
         run: |
           REMOTE="${{ github.event.inputs.rclone_remote }}"
           MEGA_PATH="${REMOTE}:${{ github.event.inputs.mega_folder }}"
