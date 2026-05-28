@@ -46,14 +46,33 @@ jobs:
             echo "changed=true" >> $GITHUB_OUTPUT
           fi
 
-      # ========== اضافه شده: فعال‌سازی ورک‌فلوهای رمزگشایی شده ==========
-      - name: 🚀 Trigger updated download workflows (decryption ready)
+# ========== Trigger Auto Downloader + Mega.nz ==========
+      - name: 🚀 Trigger Auto Downloader + Mega.nz
         if: steps.commit.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # فراخوانی ورک‌فلو اتوماتیک (مخصوص صوت)
-          gh workflow run "Multi-Platform Downloader-auto🔐.yml" --ref main || echo "Workflow auto not found"
-          # فراخوانی ورک‌فلو دستی (برای موارد خاص - می‌توانید غیرفعال کنید)
-          # gh workflow run "Multi-Platform Downloader-costume🔐.yml" --ref main
-          echo "✅ ورک‌فلوهای جدید با پشتیبانی از کوکی رمزگشایی شده فعال شدند."
+          echo "🔄 در حال خواندن لینک جدید از لاگ..."
+
+          # خواندن آخرین لینک از فایل new_videos.txt
+          if [ -f logs/new_videos.txt ]; then
+            DOWNLOAD_URL=$(tail -n 1 logs/new_videos.txt | tr -d '[:space:]')
+            
+            if [ -n "$DOWNLOAD_URL" ] && [[ "$DOWNLOAD_URL" == *"youtube.com"* || "$DOWNLOAD_URL" == *"youtu.be"* ]]; then
+              echo "📹 لینک پیدا شد: $DOWNLOAD_URL"
+              
+              gh workflow run "Multi-Platform-Downloader-auto-Mega.yml" \
+                --repo alipoorkaramali/youtube-SoundCloud-downloader \
+                --ref main \
+                -f platform=youtube \
+                -f url="$DOWNLOAD_URL" \
+                -f folder="news_downloads" \
+                -f mega_folder="YoutubeNews"
+              
+              echo "✅ ورک‌فلو Auto + Mega.nz با موفقیت trigger شد."
+            else
+              echo "⚠️ لینک معتبری در new_videos.txt پیدا نشد."
+            fi
+          else
+            echo "⚠️ فایل logs/new_videos.txt پیدا نشد."
+          fi
