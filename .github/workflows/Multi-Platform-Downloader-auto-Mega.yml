@@ -14,6 +14,27 @@ on:
       url:
         description: '🔗 لینک دانلود'
         required: true
+      type:
+        description: 'نوع دانلود'
+        required: true
+        default: 'audio'
+        type: choice
+        options:
+          - audio
+          - video
+      quality:
+        description: '🎬 کیفیت ویدیو (فقط برای حالت ویدیو)'
+        required: false
+        default: 'best'
+        type: choice
+        options:
+          - '144p'
+          - '240p'
+          - '360p'
+          - '480p'
+          - '720p'
+          - '1080p'
+          - 'best'
       folder:
         description: '📁 پوشه موقت'
         required: false
@@ -57,7 +78,15 @@ jobs:
           aria2: true
           ffmpeg: true
 
-      - name: 📦 Install latest rclone
+      - name: 💾 Cache rclone binary
+        id: cache-rclone
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/rclone
+          key: ${{ runner.os }}-rclone-v1.74.0
+
+      - name: 📦 Install latest rclone (if not cached)
+        if: steps.cache-rclone.outputs.cache-hit != 'true'
         run: |
           curl https://rclone.org/install.sh | sudo bash
           rclone version
@@ -74,20 +103,31 @@ jobs:
           echo "✅ rclone config loaded"
           rclone --config ~/.config/rclone/rclone.conf listremotes
 
-      - name: ▶️ دانلود فایل (بهترین کیفیت صوتی MP3)
+      - name: ▶️ دانلود فایل
         id: download
         run: |
           mkdir -p "${{ github.event.inputs.folder }}"
           cd "${{ github.event.inputs.folder }}"
           
           if [ "${{ github.event.inputs.platform }}" = "youtube" ]; then
-            yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --audio-quality 0 \
-              --cookies ../cookies.txt --no-playlist \
-              "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            if [ "${{ github.event.inputs.type }}" = "video" ]; then
+              QUALITY="${{ github.event.inputs.quality }}"
+              if [ "$QUALITY" = "best" ]; then
+                FORMAT="bestvideo+bestaudio/best"
+              else
+                HEIGHT="${QUALITY%p}"
+                FORMAT="bestvideo[height<=$HEIGHT]+bestaudio/best"
+              fi
+              yt-dlp -f "$FORMAT" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            else
+              yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --audio-quality 0 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            fi
           else
-            yt-dlp -x --audio-format mp3 --audio-quality 0 \
-              --cookies ../cookies.txt --no-playlist \
-              "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            if [ "${{ github.event.inputs.type }}" = "video" ]; then
+              yt-dlp -f "bestvideo+bestaudio/best" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            else
+              yt-dlp -x --audio-format mp3 --audio-quality 0 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            fi
           fi
           
           DOWNLOADED_FILE=$(ls | head -1)
