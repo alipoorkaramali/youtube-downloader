@@ -54,7 +54,6 @@ jobs:
         run: |
           echo "🔄 در حال خواندن لینک جدید از لاگ..."
 
-          # خواندن آخرین لینک از فایل new_videos.txt
           if [ -f logs/new_videos.txt ]; then
             DOWNLOAD_URL=$(tail -n 1 logs/new_videos.txt | tr -d '[:space:]')
             
@@ -71,7 +70,7 @@ jobs:
               
               echo "✅ ورک‌فلو Auto + Mega.nz با موفقیت trigger شد."
             else
-              echo "⚠️ لینک معتبری در new_videos.txt پیدا نشد."
+              echo "⚠️ لینک معتبری پیدا نشد."
             fi
           else
             echo "⚠️ فایل logs/new_videos.txt پیدا نشد."
