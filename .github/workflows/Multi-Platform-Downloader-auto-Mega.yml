@@ -1,4 +1,4 @@
-name: 🎬🎵 Auto Downloader + Mega.nz
+name: 🎬🎵 Auto Downloader + Mega.nz (with ZIP split)
 
 on:
   workflow_dispatch:
@@ -15,7 +15,7 @@ on:
         description: '🔗 لینک دانلود'
         required: true
       folder:
-        description: '📁 پوشه موقت (در رانر)'
+        description: '📁 پوشه موقت'
         required: false
         default: 'news_downloads'
       mega_folder:
@@ -23,7 +23,7 @@ on:
         required: false
         default: 'YoutubeNews'
       split_choice:
-        description: 'تقسیم فایل به چند قسمت؟'
+        description: 'تقسیم فایل به چند قسمت (ZIP volume)؟'
         required: true
         default: 'single'
         type: choice
@@ -31,7 +31,7 @@ on:
           - single
           - split
       split_size:
-        description: 'اندازه هر قسمت (مثل 100M, 500M, 1G)'
+        description: 'اندازه هر قسمت (مثال: 100M, 500M, 1G)'
         required: false
         default: '100M'
 
@@ -42,12 +42,12 @@ jobs:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔐 Decrypt cookies
+      - name: 🔐 Decrypt cookies (if exists)
         run: |
           if [ -f cookies.txt.gpg ]; then
             gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
           else
-            echo "⚠️ فایل cookies.txt.gpg یافت نشد، ادامه بدون کوکی"
+            echo "⚠️ فایل cookies.txt.gpg یافت نشد"
             touch cookies.txt
           fi
 
@@ -72,7 +72,7 @@ jobs:
           gpg --quiet --batch --yes --decrypt --passphrase="${{ secrets.RCLONE_PASSPHRASE }}" --output ~/.config/rclone/rclone.conf rclone_mega.conf.gpg
           chmod 600 ~/.config/rclone/rclone.conf
           echo "✅ rclone config loaded"
-          rclone --config ~/.config/rclone/rclone.conf listremotes  # برای تأیید
+          rclone --config ~/.config/rclone/rclone.conf listremotes
 
       - name: ▶️ دانلود فایل (بهترین کیفیت صوتی MP3)
         id: download
@@ -80,7 +80,6 @@ jobs:
           mkdir -p "${{ github.event.inputs.folder }}"
           cd "${{ github.event.inputs.folder }}"
           
-          # دانلود بر اساس پلتفرم
           if [ "${{ github.event.inputs.platform }}" = "youtube" ]; then
             yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --audio-quality 0 \
               --cookies ../cookies.txt --no-playlist \
@@ -91,21 +90,20 @@ jobs:
               "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
           fi
           
-          # ذخیره نام فایل برای مرحله بعد
           DOWNLOADED_FILE=$(ls | head -1)
           echo "DOWNLOADED_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
-          echo "FILE_PATH=$(pwd)/$DOWNLOADED_FILE" >> $GITHUB_ENV
 
-      - name: ✂️ Split file (if requested)
+      - name: ✂️ Split into zip volumes (if requested)
         if: github.event.inputs.split_choice == 'split'
         run: |
           cd "${{ github.event.inputs.folder }}"
           FILE="${{ env.DOWNLOADED_FILE }}"
           SIZE="${{ github.event.inputs.split_size }}"
-          echo "Splitting $FILE into parts of $SIZE"
-          split -b "$SIZE" "$FILE" "${FILE}.part_"
+          sudo apt-get install -y zip
+          echo "Creating zip volumes of $SIZE from $FILE"
+          zip -s "$SIZE" "${FILE}.zip" "$FILE"
           rm "$FILE"
-          echo "✅ Split completed. Parts:"
+          echo "✅ Zip volumes created:"
           ls -la
 
       - name: ☁️ آپلود به Mega.nz
@@ -113,6 +111,5 @@ jobs:
           CONFIG_FILE="$HOME/.config/rclone/rclone.conf"
           REMOTE_PATH="mega:${{ github.event.inputs.mega_folder }}"
           rclone --config "$CONFIG_FILE" mkdir "$REMOTE_PATH" 2>/dev/null || true
-          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" \
-            --progress --transfers=4 --verbose
-          echo "✅ آپلود به Mega.nz با موفقیت انجام شد!"
+          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" --progress --transfers=4 --verbose
+          echo "✅ آپلود با موفقیت انجام شد"
