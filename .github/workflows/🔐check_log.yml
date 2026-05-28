@@ -2,7 +2,7 @@ name: 🔐 Check Log & Trigger Downloader
 
 on:
   schedule:
-    - cron: '*/10 * * * *'     # هر ۱۰ دقیقه اجرا شود
+    - cron: '*/10 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -21,56 +21,31 @@ jobs:
         run: |
           mkdir -p logs
           cp -r news-watcher/logs/* logs/ 2>/dev/null || echo "No logs folder found"
-          echo "✅ لاگ‌ها کپی شدند."
 
       - name: 🔍 Check for new videos
         id: check
         run: |
           if [ -f logs/new_videos.txt ]; then
             echo "changed=true" >> $GITHUB_OUTPUT
-            echo "📝 فایل new_videos.txt پیدا شد."
           else
             echo "changed=false" >> $GITHUB_OUTPUT
-            echo "⚠️ فایل new_videos.txt وجود ندارد."
           fi
 
-      - name: 📋 Show latest URL
-        run: |
-          if [ -f logs/new_videos.txt ]; then
-            echo "آخرین لینک:"
-            tail -n 5 logs/new_videos.txt
-          fi
-
-      # ====================== Trigger Auto Downloader + Mega.nz ======================
       - name: 🚀 Trigger Auto Downloader + Mega.nz
         if: steps.check.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "🔄 در حال خواندن آخرین لینک..."
-
-          if [ -f logs/new_videos.txt ]; then
-            DOWNLOAD_URL=$(tail -n 1 logs/new_videos.txt | tr -d '[:space:]')
-            
-            if [ -n "$DOWNLOAD_URL" ] && [[ "$DOWNLOAD_URL" == *"youtube.com"* || "$DOWNLOAD_URL" == *"youtu.be"* ]]; then
-              echo "📹 لینک پیدا شد: $DOWNLOAD_URL"
-              
-              gh workflow run "Multi-Platform-Downloader-auto-Mega.yml" \
-                --repo alipoorkaramali/youtube-SoundCloud-downloader \
-                --ref main \
-                -f platform=youtube \
-                -f url="$DOWNLOAD_URL" \
-                -f folder="news_downloads" \
-                -f mega_folder="YoutubeNews"
-              
-              echo "✅ ورک‌فلو Auto + Mega.nz با موفقیت trigger شد."
-            else
-              echo "⚠️ لینک معتبری پیدا نشد."
-            fi
-          else
-            echo "⚠️ فایل logs/new_videos.txt پیدا نشد."
+          DOWNLOAD_URL=$(tail -n 1 logs/new_videos.txt | tr -d '[:space:]')
+          if [[ "$DOWNLOAD_URL" == *"youtube.com"* || "$DOWNLOAD_URL" == *"youtu.be"* ]]; then
+            gh workflow run "Multi-Platform-Downloader-auto-Mega.yml" \
+              --repo alipoorkaramali/youtube-SoundCloud-downloader \
+              --ref main \
+              -f platform=youtube \
+              -f url="$DOWNLOAD_URL" \
+              -f type="audio" \
+              -f quality="best" \
+              -f folder="news_downloads" \
+              -f mega_folder="YoutubeNews" \
+              -f split_choice="single"
           fi
-
-      - name: 🧹 Cleanup
-        run: |
-          rm -rf news-watcher
