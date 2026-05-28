@@ -23,15 +23,24 @@ on:
           - audio
           - video
       quality:
-        description: 'کیفیت (برای ویدیو: 1080p, 720p, best)'
+        description: '🎬 کیفیت ویدیو (فقط برای حالت ویدیو)'
         required: false
         default: 'best'
+        type: choice
+        options:
+          - '144p'
+          - '240p'
+          - '360p'
+          - '480p'
+          - '720p'
+          - '1080p'
+          - 'best'
       folder:
-        description: '📁 نام پوشه موقت'
+        description: '📁 پوشه موقت'
         required: false
         default: 'downloads'
       mega_folder:
-        description: '📂 نام پوشه در Mega.nz'
+        description: '📂 پوشه در Mega.nz'
         required: false
         default: 'YoutubeDownloads'
       split_choice:
@@ -59,7 +68,7 @@ jobs:
           if [ -f cookies.txt.gpg ]; then
             gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
           else
-            echo "⚠️ فایل cookies.txt.gpg یافت نشد، ادامه بدون کوکی"
+            echo "⚠️ فایل cookies.txt.gpg یافت نشد"
             touch cookies.txt
           fi
 
@@ -69,7 +78,15 @@ jobs:
           aria2: true
           ffmpeg: true
 
-      - name: 📦 Install latest rclone
+      - name: 💾 Cache rclone binary
+        id: cache-rclone
+        uses: actions/cache@v4
+        with:
+          path: /usr/bin/rclone
+          key: ${{ runner.os }}-rclone-v1.74.0
+
+      - name: 📦 Install latest rclone (if not cached)
+        if: steps.cache-rclone.outputs.cache-hit != 'true'
         run: |
           curl https://rclone.org/install.sh | sudo bash
           rclone version
@@ -89,6 +106,8 @@ jobs:
       - name: ▶️ دانلود فایل
         id: download
         run: |
+          # حذف پوشه قبلی اگر وجود داشته باشد (اختیاری)
+          rm -rf "${{ github.event.inputs.folder }}" 2>/dev/null || true
           mkdir -p "${{ github.event.inputs.folder }}"
           cd "${{ github.event.inputs.folder }}"
           
@@ -98,17 +117,19 @@ jobs:
               if [ "$QUALITY" = "best" ]; then
                 FORMAT="bestvideo+bestaudio/best"
               else
-                FORMAT="bestvideo[height<=$QUALITY]+bestaudio/best"
+                HEIGHT="${QUALITY%p}"
+                FORMAT="bestvideo[height<=$HEIGHT]+bestaudio/best"
               fi
-              echo "🎬 دانلود ویدیو با فرمت: $FORMAT"
               yt-dlp -f "$FORMAT" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
             else
-              echo "🎵 دانلود صوتی با کیفیت بالا (MP3)"
               yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
             fi
           else
-            echo "🎧 دانلود از ساوندکلاود به صورت MP3"
-            yt-dlp -x --audio-format mp3 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            if [ "${{ github.event.inputs.type }}" = "video" ]; then
+              yt-dlp -f "bestvideo+bestaudio/best" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            else
+              yt-dlp -x --audio-format mp3 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+            fi
           fi
           
           DOWNLOADED_FILE=$(ls | head -1)
@@ -133,4 +154,4 @@ jobs:
           REMOTE_PATH="mega:${{ github.event.inputs.mega_folder }}"
           rclone --config "$CONFIG_FILE" mkdir "$REMOTE_PATH" 2>/dev/null || true
           rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" --progress --transfers=4 --verbose
-          echo "✅ آپلود به Mega.nz با موفقیت انجام شد!"
+          echo "✅ آپلود با موفقیت انجام شد"
