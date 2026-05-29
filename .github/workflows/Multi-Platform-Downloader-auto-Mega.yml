@@ -235,3 +235,23 @@ jobs:
           rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" \
             --progress --transfers=4 --verbose
           echo "✅ آپلود با موفقیت انجام شد"
+
+      # ============= ارسال اعلان به گوشی (Pushbullet) در صورت موفقیت =============
+      - name: 📱 Send Pushbullet notification on success
+        if: success()
+        run: |
+          if [ -z "${{ secrets.PB_TOKEN }}" ]; then
+            echo "⚠️ سکرت PB_TOKEN تنظیم نشده است. اعلان ارسال نمی‌شود."
+            exit 0
+          fi
+          MESSAGE=$(cat <<EOF
+          🎉 دانلود و آپلود خودکار با موفقیت انجام شد!
+          📁 پلتفرم: ${{ github.event.inputs.platform }}
+          🔗 لینک: ${{ github.event.inputs.url }}
+          📂 پوشه مقصد در مگا: ${{ github.event.inputs.mega_folder }}
+          ✂️ تقسیم: ${{ github.event.inputs.split_choice }} ${{ github.event.inputs.split_choice == 'split' && format('(اندازه {0})', github.event.inputs.split_size) || '' }}
+          EOF
+          )
+          curl -u "${{ secrets.PB_TOKEN }}": -X POST https://api.pushbullet.com/v2/pushes \
+            -H "Content-Type: application/json" \
+            -d "{\"type\": \"note\", \"title\": \"✅ دانلود خودکار به مگا اضافه شد\", \"body\": $(echo "$MESSAGE" | jq -Rs .)}"
