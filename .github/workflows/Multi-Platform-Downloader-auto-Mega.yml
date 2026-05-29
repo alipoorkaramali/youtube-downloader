@@ -66,7 +66,6 @@ jobs:
       - name: 📥 دریافت فایل‌های مخزن
         uses: actions/checkout@v4
 
-      # ============= رمزگشایی فایل کوکی =============
       - name: 🔐 رمزگشایی فایل cookies.txt.gpg
         run: |
           if [ ! -f "cookies.txt.gpg" ]; then
@@ -80,18 +79,14 @@ jobs:
             echo "❌ خطا: رمزگشایی ناموفق بود یا فایل کوکی خالی است."
             exit 1
           fi
-      # ==============================================
 
-      # ============= نصب yt-dlp و ffmpeg با کش =============
       - name: ⚙️ نصب yt‑dlp و ffmpeg
         uses: AnimMouse/setup-yt-dlp@v3
         with:
           ejs-node: true
           aria2: true
           ffmpeg: true
-      # ====================================================
 
-      # ============= کش و نصب rclone (رفع خطای Permission denied) =============
       - name: 💾 Cache rclone binary (user path)
         id: cache-rclone
         uses: actions/cache@v4
@@ -118,9 +113,7 @@ jobs:
             fi
           fi
           rclone version
-      # =============================================================
 
-      # ============= رمزگشایی تنظیمات rclone برای مگا =============
       - name: 🔓 Decrypt rclone config
         run: |
           mkdir -p ~/.config/rclone
@@ -132,7 +125,6 @@ jobs:
           chmod 600 ~/.config/rclone/rclone.conf
           echo "✅ rclone config loaded"
           rclone --config ~/.config/rclone/rclone.conf listremotes
-      # ============================================================
 
       - name: 🧹 پاکسازی پوشه قبلی (اختیاری)
         run: rm -rf "${{ github.event.inputs.folder }}" 2>/dev/null || true
@@ -179,6 +171,8 @@ jobs:
           fi
           DOWNLOADED_FILE=$(ls | head -1)
           echo "DOWNLOADED_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
+          VIDEO_TITLE=$(basename "$DOWNLOADED_FILE" | sed 's/\.[^.]*$//')
+          echo "VIDEO_TITLE=$VIDEO_TITLE" >> $GITHUB_ENV
 
       # ============= دانلود از ساندکلاد =============
       - name: ☁️ ساندکلاد | دانلود
@@ -211,6 +205,8 @@ jobs:
           fi
           DOWNLOADED_FILE=$(ls | head -1)
           echo "DOWNLOADED_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
+          VIDEO_TITLE=$(basename "$DOWNLOADED_FILE" | sed 's/\.[^.]*$//')
+          echo "VIDEO_TITLE=$VIDEO_TITLE" >> $GITHUB_ENV
 
       # ============= تقسیم فایل به زیپ ولوم (در صورت درخواست) =============
       - name: ✂️ تقسیم فایل به ZIP volumes (در صورت نیاز)
@@ -236,7 +232,7 @@ jobs:
             --progress --transfers=4 --verbose
           echo "✅ آپلود با موفقیت انجام شد"
 
-      # ============= ارسال اعلان به گوشی (Pushbullet) در صورت موفقیت =============
+      # ============= ارسال اعلان به گوشی (Pushbullet) با عنوان ویدیو =============
       - name: 📱 Send Pushbullet notification on success
         if: success()
         run: |
@@ -247,7 +243,7 @@ jobs:
           MESSAGE=$(cat <<EOF
           🎉 دانلود و آپلود خودکار با موفقیت انجام شد!
           📁 پلتفرم: ${{ github.event.inputs.platform }}
-          🔗 لینک: ${{ github.event.inputs.url }}
+          🎬 عنوان: ${{ env.VIDEO_TITLE }}
           📂 پوشه مقصد در مگا: ${{ github.event.inputs.mega_folder }}
           ✂️ تقسیم: ${{ github.event.inputs.split_choice }} ${{ github.event.inputs.split_choice == 'split' && format('(اندازه {0})', github.event.inputs.split_size) || '' }}
           EOF
