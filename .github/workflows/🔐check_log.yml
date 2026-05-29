@@ -5,47 +5,39 @@ on:
     - cron: '*/10 * * * *'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: write
+
 jobs:
-  check-and-trigger:
+  check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 📥 Checkout youtube-news-watcher
+      - name: 📥 Checkout current repository
         uses: actions/checkout@v4
+
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
         with:
-          repository: alipoorkaramali/youtube-news-watcher
-          ref: main
-          path: news-watcher
+          python-version: '3.11'
 
-      - name: 📂 Copy logs to current repository
-        run: |
-          mkdir -p logs
-          cp -r news-watcher/logs/* logs/ 2>/dev/null || echo "No logs folder found"
+      - name: 📦 Install requests
+        run: pip install requests
 
-      - name: 🔍 Check for new videos
-        id: check
-        run: |
-          if [ -f logs/new_videos.txt ]; then
-            echo "changed=true" >> $GITHUB_OUTPUT
-          else
-            echo "changed=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 🚀 Trigger Auto Downloader + Mega.nz
-        if: steps.check.outputs.changed == 'true'
+      - name: 🔎 Run check_and_trigger.py
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python check_and_trigger.py
+
+      - name: 💾 Commit updated state files
         run: |
-          DOWNLOAD_URL=$(tail -n 1 logs/new_videos.txt | tr -d '[:space:]')
-          if [[ "$DOWNLOAD_URL" == *"youtube.com"* || "$DOWNLOAD_URL" == *"youtu.be"* ]]; then
-            gh workflow run "Multi-Platform-Downloader-auto-Mega.yml" \
-              --repo alipoorkaramali/youtube-SoundCloud-downloader \
-              --ref main \
-              -f platform=youtube \
-              -f url="$DOWNLOAD_URL" \
-              -f type="audio" \
-              -f quality="best" \
-              -f folder="news_downloads" \
-              -f mega_folder="YoutubeNews" \
-              -f split_choice="single"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add processed.txt processed_titles.txt
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Update processed state"
+            git push
           fi
