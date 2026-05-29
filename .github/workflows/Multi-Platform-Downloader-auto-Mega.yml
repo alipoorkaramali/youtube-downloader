@@ -1,4 +1,4 @@
-name: 🎬🎵 Auto Downloader + Mega.nz (with ZIP split)
+name: 🎬🎵 Auto Downloader + Mega.nz (YouTube/SoundCloud - Audio/Video - ZIP split)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
           - youtube
           - soundcloud
       url:
-        description: '🔗 لینک دانلود'
+        description: '🔗 لینک ویدئو / آهنگ'
         required: true
       type:
         description: 'نوع دانلود'
@@ -23,7 +23,7 @@ on:
           - audio
           - video
       quality:
-        description: '🎬 کیفیت ویدیو (فقط برای حالت ویدیو)'
+        description: '🎬 کیفیت ویدیو (فقط در حالت ویدیو)'
         required: false
         default: 'best'
         type: choice
@@ -38,11 +38,11 @@ on:
       folder:
         description: '📁 پوشه موقت'
         required: false
-        default: 'news_downloads'
+        default: 'downloads'
       mega_folder:
         description: '📂 پوشه در Mega.nz'
         required: false
-        default: 'YoutubeNews'
+        default: 'YoutubeDownloads'
       split_choice:
         description: 'تقسیم فایل به چند قسمت (ZIP volume)؟'
         required: true
@@ -59,25 +59,39 @@ on:
 jobs:
   download:
     runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
     steps:
-      - name: 📥 Checkout Repository
+      - name: 📥 دریافت فایل‌های مخزن
         uses: actions/checkout@v4
 
-      - name: 🔐 Decrypt cookies (if exists)
+      # ============= رمزگشایی فایل کوکی =============
+      - name: 🔐 رمزگشایی فایل cookies.txt.gpg
         run: |
-          if [ -f cookies.txt.gpg ]; then
-            gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
-          else
-            echo "⚠️ فایل cookies.txt.gpg یافت نشد"
-            touch cookies.txt
+          if [ ! -f "cookies.txt.gpg" ]; then
+            echo "❌ خطا: فایل cookies.txt.gpg در مخزن یافت نشد!"
+            exit 1
           fi
+          gpg --batch --yes --passphrase "${{ secrets.COOKIE_DECRYPT_KEY }}" --decrypt cookies.txt.gpg > cookies.txt
+          if [ -s cookies.txt ]; then
+            echo "✅ فایل cookies.txt با موفقیت رمزگشایی شد."
+          else
+            echo "❌ خطا: رمزگشایی ناموفق بود یا فایل کوکی خالی است."
+            exit 1
+          fi
+      # ==============================================
 
-      - name: ⚙️ Setup yt-dlp + ffmpeg
+      # ============= نصب yt-dlp و ffmpeg با کش =============
+      - name: ⚙️ نصب yt‑dlp و ffmpeg
         uses: AnimMouse/setup-yt-dlp@v3
         with:
+          ejs-node: true
           aria2: true
           ffmpeg: true
+      # ====================================================
 
+      # ============= کش و نصب rclone =============
       - name: 💾 Cache rclone binary
         id: cache-rclone
         uses: actions/cache@v4
@@ -85,13 +99,13 @@ jobs:
           path: /usr/bin/rclone
           key: ${{ runner.os }}-rclone-v1.74.0
 
-      - name: 📦 Install latest rclone (if not cached)
+      - name: 📦 نصب rclone (در صورت عدم وجود کش)
         if: steps.cache-rclone.outputs.cache-hit != 'true'
         run: |
           curl https://rclone.org/install.sh | sudo bash
           rclone version
 
-      - name: 🔓 Decrypt rclone config
+      - name: 🔓 رمزگشایی تنظیمات rclone برای مگا
         run: |
           mkdir -p ~/.config/rclone
           if [ ! -f rclone_mega.conf.gpg ]; then
@@ -100,56 +114,108 @@ jobs:
           fi
           gpg --quiet --batch --yes --decrypt --passphrase="${{ secrets.RCLONE_PASSPHRASE }}" --output ~/.config/rclone/rclone.conf rclone_mega.conf.gpg
           chmod 600 ~/.config/rclone/rclone.conf
-          echo "✅ rclone config loaded"
+          echo "✅ تنظیمات rclone بارگذاری شد"
           rclone --config ~/.config/rclone/rclone.conf listremotes
+      # ============================================
 
-      - name: ▶️ دانلود فایل
-        id: download
+      - name: 🧹 پاکسازی پوشه قبلی (اختیاری)
+        run: rm -rf "${{ github.event.inputs.folder }}" 2>/dev/null || true
+
+      # ============= دانلود از یوتیوب =============
+      - name: ▶️ یوتیوب | دانلود
+        if: github.event.inputs.platform == 'youtube'
+        id: download_youtube
         run: |
           mkdir -p "${{ github.event.inputs.folder }}"
           cd "${{ github.event.inputs.folder }}"
-          
-          if [ "${{ github.event.inputs.platform }}" = "youtube" ]; then
-            if [ "${{ github.event.inputs.type }}" = "video" ]; then
-              QUALITY="${{ github.event.inputs.quality }}"
-              if [ "$QUALITY" = "best" ]; then
-                FORMAT="bestvideo+bestaudio/best"
-              else
-                HEIGHT="${QUALITY%p}"
-                FORMAT="bestvideo[height<=$HEIGHT]+bestaudio/best"
-              fi
-              yt-dlp -f "$FORMAT" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+          if [ "${{ github.event.inputs.type }}" = "video" ]; then
+            QUALITY="${{ github.event.inputs.quality }}"
+            if [ "$QUALITY" = "best" ]; then
+              FORMAT="bestvideo+bestaudio/best"
             else
-              yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" --audio-format mp3 --audio-quality 0 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
+              HEIGHT="${QUALITY%p}"
+              FORMAT="bestvideo[height<=$HEIGHT]+bestaudio/best"
             fi
+            yt-dlp -f "$FORMAT" \
+              --merge-output-format mp4 \
+              --cookies ../cookies.txt \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
+              --sleep-interval 5 \
+              --max-sleep-interval 15 \
+              --sleep-requests 2 \
+              --force-overwrites \
+              --no-playlist \
+              "${{ github.event.inputs.url }}" \
+              -o "%(title)s.%(ext)s"
           else
-            if [ "${{ github.event.inputs.type }}" = "video" ]; then
-              yt-dlp -f "bestvideo+bestaudio/best" --merge-output-format mp4 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
-            else
-              yt-dlp -x --audio-format mp3 --audio-quality 0 --cookies ../cookies.txt "${{ github.event.inputs.url }}" -o "%(title)s.%(ext)s"
-            fi
+            yt-dlp -f "bestaudio[ext=m4a]/bestaudio/best" \
+              --audio-format mp3 \
+              --audio-quality 0 \
+              --cookies ../cookies.txt \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
+              --sleep-interval 5 \
+              --max-sleep-interval 15 \
+              --sleep-requests 2 \
+              --force-overwrites \
+              --no-playlist \
+              "${{ github.event.inputs.url }}" \
+              -o "%(title)s.%(ext)s"
           fi
-          
           DOWNLOADED_FILE=$(ls | head -1)
           echo "DOWNLOADED_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
 
-      - name: ✂️ Split into zip volumes (if requested)
+      # ============= دانلود از ساندکلاد =============
+      - name: ☁️ ساندکلاد | دانلود
+        if: github.event.inputs.platform == 'soundcloud'
+        id: download_sc
+        run: |
+          mkdir -p "${{ github.event.inputs.folder }}"
+          cd "${{ github.event.inputs.folder }}"
+          if [ "${{ github.event.inputs.type }}" = "video" ]; then
+            yt-dlp -f bestvideo+bestaudio/best \
+              --merge-output-format mp4 \
+              --no-playlist \
+              --force-ipv4 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
+              --sleep-interval 5 \
+              --max-sleep-interval 15 \
+              --sleep-requests 2 \
+              "${{ github.event.inputs.url }}" \
+              -o "%(title)s.%(ext)s"
+          else
+            yt-dlp -x --audio-format mp3 --audio-quality 0 \
+              --no-playlist \
+              --force-ipv4 \
+              --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" \
+              --sleep-interval 5 \
+              --max-sleep-interval 15 \
+              --sleep-requests 2 \
+              "${{ github.event.inputs.url }}" \
+              -o "%(title)s.%(ext)s"
+          fi
+          DOWNLOADED_FILE=$(ls | head -1)
+          echo "DOWNLOADED_FILE=$DOWNLOADED_FILE" >> $GITHUB_ENV
+
+      # ============= تقسیم فایل به زیپ ولوم (در صورت درخواست) =============
+      - name: ✂️ تقسیم فایل به ZIP volumes (در صورت نیاز)
         if: github.event.inputs.split_choice == 'split'
         run: |
           cd "${{ github.event.inputs.folder }}"
           FILE="${{ env.DOWNLOADED_FILE }}"
           SIZE="${{ github.event.inputs.split_size }}"
           sudo apt-get install -y zip
-          echo "Creating zip volumes of $SIZE from $FILE"
+          echo "در حال تقسیم $FILE به قطعات $SIZE"
           zip -s "$SIZE" "${FILE}.zip" "$FILE"
           rm "$FILE"
-          echo "✅ Zip volumes created:"
+          echo "✅ قطعات ZIP ساخته شدند:"
           ls -la
 
+      # ============= آپلود به مگا =============
       - name: ☁️ آپلود به Mega.nz
         run: |
           CONFIG_FILE="$HOME/.config/rclone/rclone.conf"
           REMOTE_PATH="mega:${{ github.event.inputs.mega_folder }}"
           rclone --config "$CONFIG_FILE" mkdir "$REMOTE_PATH" 2>/dev/null || true
-          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" --progress --transfers=4 --verbose
+          rclone --config "$CONFIG_FILE" copy "${{ github.event.inputs.folder }}" "$REMOTE_PATH" \
+            --progress --transfers=4 --verbose
           echo "✅ آپلود با موفقیت انجام شد"
