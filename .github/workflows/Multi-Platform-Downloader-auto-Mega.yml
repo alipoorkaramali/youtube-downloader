@@ -91,21 +91,37 @@ jobs:
           ffmpeg: true
       # ====================================================
 
-      # ============= کش و نصب rclone =============
-      - name: 💾 Cache rclone binary
+      # ============= کش و نصب rclone (رفع خطای Permission denied) =============
+      - name: 💾 Cache rclone binary (user path)
         id: cache-rclone
         uses: actions/cache@v4
         with:
-          path: /usr/bin/rclone
+          path: ~/.local/bin/rclone
           key: ${{ runner.os }}-rclone-v1.74.0
 
-      - name: 📦 نصب rclone (در صورت عدم وجود کش)
+      - name: 📦 Install rclone if not cached
         if: steps.cache-rclone.outputs.cache-hit != 'true'
         run: |
           curl https://rclone.org/install.sh | sudo bash
-          rclone version
+          mkdir -p ~/.local/bin
+          cp /usr/bin/rclone ~/.local/bin/
 
-      - name: 🔓 رمزگشایی تنظیمات rclone برای مگا
+      - name: 🔗 Copy rclone to system PATH (from cache or install)
+        run: |
+          if [ ! -f /usr/bin/rclone ]; then
+            if [ -f ~/.local/bin/rclone ]; then
+              sudo cp ~/.local/bin/rclone /usr/bin/rclone
+              sudo chmod +x /usr/bin/rclone
+            else
+              echo "❌ rclone binary not found"
+              exit 1
+            fi
+          fi
+          rclone version
+      # =============================================================
+
+      # ============= رمزگشایی تنظیمات rclone برای مگا =============
+      - name: 🔓 Decrypt rclone config
         run: |
           mkdir -p ~/.config/rclone
           if [ ! -f rclone_mega.conf.gpg ]; then
@@ -114,9 +130,9 @@ jobs:
           fi
           gpg --quiet --batch --yes --decrypt --passphrase="${{ secrets.RCLONE_PASSPHRASE }}" --output ~/.config/rclone/rclone.conf rclone_mega.conf.gpg
           chmod 600 ~/.config/rclone/rclone.conf
-          echo "✅ تنظیمات rclone بارگذاری شد"
+          echo "✅ rclone config loaded"
           rclone --config ~/.config/rclone/rclone.conf listremotes
-      # ============================================
+      # ============================================================
 
       - name: 🧹 پاکسازی پوشه قبلی (اختیاری)
         run: rm -rf "${{ github.event.inputs.folder }}" 2>/dev/null || true
