@@ -78,18 +78,34 @@ jobs:
           aria2: true
           ffmpeg: true
 
-      - name: 💾 Cache rclone binary
+      # ============= کش و نصب rclone (رفع خطای Permission denied) =============
+      - name: 💾 Cache rclone binary (user path)
         id: cache-rclone
         uses: actions/cache@v4
         with:
-          path: /usr/bin/rclone
+          path: ~/.local/bin/rclone
           key: ${{ runner.os }}-rclone-v1.74.0
 
-      - name: 📦 Install latest rclone (if not cached)
+      - name: 📦 Install rclone if not cached
         if: steps.cache-rclone.outputs.cache-hit != 'true'
         run: |
           curl https://rclone.org/install.sh | sudo bash
+          mkdir -p ~/.local/bin
+          cp /usr/bin/rclone ~/.local/bin/
+
+      - name: 🔗 Copy rclone to system PATH (from cache or install)
+        run: |
+          if [ ! -f /usr/bin/rclone ]; then
+            if [ -f ~/.local/bin/rclone ]; then
+              sudo cp ~/.local/bin/rclone /usr/bin/rclone
+              sudo chmod +x /usr/bin/rclone
+            else
+              echo "❌ rclone binary not found"
+              exit 1
+            fi
+          fi
           rclone version
+      # =============================================================
 
       - name: 🔓 Decrypt rclone config
         run: |
